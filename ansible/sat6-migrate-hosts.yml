@@ -1,0 +1,59 @@
+---
+- hosts: migrate-hosts
+  vars:
+    from_proxy: sat62.example.com
+    to_proxy: cap62.example.com
+  remote_user: root
+  
+  tasks:
+  - name: remove katello-ca-consumer-{{ from_proxy }}.noarch
+    yum:
+      name: katello-ca-consumer-{{ from_proxy }}.noarch
+      state: absent
+
+  - name: install http://{{ to_proxy }}/pub/katello-ca-consumer-latest.noarch.rpm
+    yum:
+      name: http://{{ to_proxy }}/pub/katello-ca-consumer-latest.noarch.rpm
+      state: present 
+  
+  - name: list repositories
+    command: subscription-manager repos
+    changed_when: false
+
+  - name: make sure latest puppet version is installed (and clean up yum cache first)
+    yum:
+      name: puppet
+      state: latest
+      update_cache: yes 
+
+  - name: make sure latest katello-agent is installed
+    yum:
+      name: katello-agent
+      state: latest
+
+  - name: update puppet config
+    replace:
+      dest: /etc/puppet/puppet.conf
+      regexp: "{{ from_proxy }}"
+      replace: "{{ to_proxy }}"
+      backup: yes
+    notify:
+    - restart puppet
+
+  - name: ensure puppet is running and enabled
+    service:
+      name: puppet
+      state: started
+      enabled: yes
+
+  - name: ensure goferd (katello-agent) is running and enabled
+    service:
+      name: goferd
+      state: started
+      enabled: yes
+
+  handlers:
+  - name: restart puppet
+    service:
+      name: puppet
+      state: restarted
