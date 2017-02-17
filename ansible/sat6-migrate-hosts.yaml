@@ -1,0 +1,94 @@
+# This playbook is used to register a host to a Satellite 6 server. Register with subscription-manager, enable repsitories, install and enable katello-agent and put the host in the correct host group
+# The host file have to contain something similar to the following:
+# [test-servers]
+# host1
+# host2
+# host3
+#
+# [test-servers:vars]
+# lifecycle_environment=TEST
+# host_group_title=HG-TEST/RHEL7
+
+---
+- hosts: test-servers
+  vars:
+    satellite: sat62.example.com
+    organization: Default_Organization
+    satellite_username: satellite_username
+    satellite_password: satellite_password
+  remote_user: root
+
+  tasks:
+  - name: remove existing katello-ca-consumer RPMs
+    yum:
+      name: '*katello-ca-consumer*'
+      state: absent
+
+  - name: install http://{{ satellite }}/pub/katello-ca-consumer-latest.noarch.rpm
+    yum:
+      name: http://{{ satellite }}/pub/katello-ca-consumer-latest.noarch.rpm
+      state: present
+
+  - name: environment
+    debug: msg={{ lifecycle_environment }}
+
+  - name: register with subscription-manager
+    command: "subscription-manager register --org {{ organization }} --activationkey AK_{{ lifecycle_environment }}_RHEL{{ ansible_distribution_major_version }}"
+    register: registration_output
+
+  - name: output of registration
+    debug:
+      msg: "{{ registration_output.stdout.split('\n') }}"
+
+  - name: enable all repositories
+    command: "subscription-manager repos --enable '*'"
+ 
+  - name: get repositories
+    command: "subscription-manager repos"
+    register: repos_output
+
+  - name: print repositories
+    debug:
+      msg: "{{ repos_output.stdout.split('\n') }}"
+
+  - name: install katello-agent
+    yum:
+      name: katello-agent
+      state: latest
+
+  - name: start and enable goferd
+    service:
+      name: goferd
+      state: running
+      enabled: true
+
+  - name: get host id
+    uri:
+      url: https://{{ satellite }}/api/hosts/{{ ansible_nodename }}
+      method: GET
+      user: {{ satellite_username }}
+      password: {{ satellite_password }}
+      force_basic_auth: yes
+    register: host_object
+
+  - name: get host groups (possibly multiple results if the search match more than one host group)
+    uri:
+      url: https://{{ satellite }}/api/hostgroups?search={{ host_group_title }}
+      method: GET
+      user: {{ satellite_username }}
+      password: {{ satellite_password }}
+      force_basic_auth: yes
+    register: host_group_object
+
+  - name: put host in correct host group
+    uri:
+      url: https://{{ satellite }}/api/hosts/{{ host_object.json.id }}
+      method: PUT
+      user: {{ satellite_username }}
+      password: {{ satellite_password }}
+      force_basic_auth: yes
+      body: '{"host":{"hostgroup_id":{{ item.id }}}}'
+      body_format: json
+      HEADER_Content-Type: "application/json"
+    with_items: "{{ host_group_object.json.results }}"
+    when: item.title == "{{ host_group_title }}"

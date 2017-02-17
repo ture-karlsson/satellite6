@@ -1,0 +1,8 @@
+[test-servers]
+host1
+host2
+host3
+
+[test-servers:vars]
+lifecycle_environment=TEST
+host_group_title=HG-TEST/RHEL7
