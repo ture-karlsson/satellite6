@@ -12,7 +12,7 @@
 ---
 - hosts: test-servers
   vars:
-    satellite: sat62.example.com
+    satellite: sat6.example.com
     organization: Default_Organization
     satellite_username: satellite_username
     satellite_password: satellite_password
